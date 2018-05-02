@@ -12,7 +12,8 @@ import pymc3 as pm
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import theano.tensor as TT 
+import theano.tensor as TT
+import theano
 #%%
 # Set data path
 data_path = '/Users/smuch/Documents/coding/Study_PyMC3/Dont_overfit/'
@@ -36,26 +37,33 @@ print (training_data.shape[0] * training_data.shape[1])
 training_data = np.array(training_data)
 testing_data = np.array(testing_data)
 
-#%%
-def Z(coef=coef, to_include=to_include, data=TT.as_tensor(training_data)):
-    ym = np.dot(to_include * training_data, coef)
+#%%    
+
+def Z(coef, to_include, training_data):
+    ym = TT.dot(to_include * training_data, coef)
     return ym - ym.mean()
 
 def T(z=Z):
-    return 0.45 * (np.sign(z) + 1.1)
-    
+    return TT.switch(z<0,1.0,0)
+
 with pm.Model() as model:
     
 # Select the para?
     to_include = pm.Bernoulli("to_include", 0.5, shape=200)
 # To give a diss for 200 vars 
-    T = pm.Deterministic("T",T)
+    coef = pm.Uniform("coefs", 0, 1, shape=200)   
     
-    coef = pm.Uniform("coefs", 0, 1, shape=200)
+    Z = pm.Deterministic("Z",Z(coef=coef, to_include=to_include, training_data=theano.shared(training_data)))
+    
+    T = pm.Deterministic("T",T(Z))
+    
     obs = pm.Bernoulli("obs", T, observed=training_labels)
     
     start = pm.find_MAP()
     step = pm.Metropolis()
-    pm.sample(100000, step=step, start=start)
+    trace = pm.sample(100000, step=step, start=start)
 
 #%%
+pm.traceplot(trace)
+#%%
+(np.round((trace["T"][-500:-300, :]).mean())== training_labels).mean()
